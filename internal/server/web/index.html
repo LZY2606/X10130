@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>消息目录校验</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>消息目录校验</h1>
+  <div class="snap" id="snap" title="当前已提交快照标识">快照: <span id="snapshot">—</span></div>
+  <div class="snap"><button id="btn-demo" type="button">载入演示数据</button>
+  <button id="btn-refresh" type="button">刷新</button></div>
+</header>
+
+<main>
+  <section class="card" id="sec-import">
+    <h2>1. 导入目录</h2>
+    <form id="form-import">
+      <label>角色
+        <select name="role"><option value="baseline">基准语言</option><option value="target">目标语言</option></select>
+      </label>
+      <label>语言代码 <input name="language" placeholder="如 en / ja" required></label>
+      <label>操作标识（可选，幂等）<input name="op_id" placeholder="client-uuid"></label>
+      <label>文件 <input type="file" name="file" accept=".json,application/json" required></label>
+      <input type="hidden" name="expected_snapshot" value="">
+      <button type="submit">上传</button>
+    </form>
+    <pre id="import-result" class="result"></pre>
+  </section>
+
+  <section class="card">
+    <h2>2. 目录版本</h2>
+    <div id="catalogs"></div>
+    <h3>原始文件（每次导入逐字节保留）</h3>
+    <table id="uploads-table"><thead><tr><th>时间</th><th>角色</th><th>语言</th><th>版本</th><th>文件</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>3. 问题列表</h2>
+    <div class="row">
+      <select id="issue-lang"></select>
+      <button id="btn-issues" type="button">校验/重放</button>
+      <span id="val-meta" class="muted"></span>
+    </div>
+    <div id="val-invalid" class="conflict hidden"></div>
+    <table id="issues-table"><thead><tr><th>Key</th><th>类型</th><th>说明</th><th>期望/实际</th><th>豁免</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>4. 并排结构</h2>
+    <div class="row">
+      <input id="key-input" placeholder="输入 key，如 greeting">
+      <button id="btn-key" type="button">查看</button>
+    </div>
+    <div id="key-view"></div>
+  </section>
+
+  <section class="card">
+    <h2>5. 确认改名</h2>
+    <form id="form-rename" class="grid">
+      <input name="old_key" placeholder="旧 key" required>
+      <input name="new_key" placeholder="新 key" required>
+      <input name="from_version" placeholder="依据的旧基准版本（可选）">
+      <input name="expected_snapshot" type="hidden">
+      <input name="op_id" placeholder="操作标识（可选）">
+      <button type="submit">确认改名</button>
+    </form>
+    <div id="renames"></div>
+  </section>
+
+  <section class="card">
+    <h2>6. 豁免</h2>
+    <div id="exemptions"></div>
+  </section>
+
+  <section class="card">
+    <h2>7. 批量修正</h2>
+    <p class="muted">每行一个语言：语言代码、依据版本、JSON 内容。冲突语言不会回滚已成功语言；重试同一操作标识只处理未完成项。</p>
+    <div class="grid">
+      <input id="batch-op" placeholder="操作标识（幂等）">
+      <input id="batch-snap" type="hidden">
+    </div>
+    <table id="batch-items"><thead><tr><th>语言</th><th>依据版本</th><th>JSON 内容</th></tr></thead><tbody></tbody></table>
+    <div class="row">
+      <button id="btn-batch-add" type="button">+ 语言</button>
+      <button id="btn-batch" type="button">提交批量修正</button>
+    </div>
+    <pre id="batch-result" class="result"></pre>
+  </section>
+
+  <section class="card">
+    <h2>8. 发布证明</h2>
+    <div class="row">
+      <button id="btn-cert" type="button">生成发布证明</button>
+      <span id="cert-status" class="muted"></span>
+    </div>
+    <pre id="cert-view" class="result cert"></pre>
+    <table id="certs-table"><thead><tr><th>证明</th><th>快照</th><th>生成时间</th><th>状态</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<dialog id="exempt-dialog">
+  <form method="dialog" id="form-exempt">
+    <h3>设置豁免</h3>
+    <p class="muted" id="exempt-issue"></p>
+    <label>理由（必填）<input name="reason" required></label>
+    <label>期限（留空为永久；RFC3339）<input name="expires_at" placeholder="2026-09-22T12:00:00Z"></label>
+    <input type="hidden" name="issue_key">
+    <input type="hidden" name="expected_snapshot">
+    <input type="hidden" name="op_id">
+    <menu><button value="cancel">取消</button><button id="exempt-ok" value="default">保存豁免</button></menu>
+  </form>
+</dialog>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

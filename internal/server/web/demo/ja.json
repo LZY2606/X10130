@@ -1,0 +1,8 @@
+{
+  "app.title": "メッセージ",
+  "greeting": "こんにちは {name}、<b>{product}</b>へようこそ！",
+  "items": "{count, plural, other {{count}件のアイテムがあります}}",
+  "delete.confirm": "{filename} を削除しますか？復元できません。",
+  "profile.edit": "<a href=\"{url}\">プロフィールを編集</a>",
+  "ja.only": "日本語のみのキー"
+}

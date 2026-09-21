@@ -1,0 +1,11 @@
+{
+  "app.title": "Messages",
+  "greeting": "Hello {name}, welcome to <b>{product}</b>!",
+  "items": "{count, plural, one {You have one item} other {You have {count} items}}",
+  "delete.confirm": "Delete {filename}? It won't be recoverable.",
+  "profile.edit": {
+    "pattern": "Edit <a href=\"{url}\">your profile</a>",
+    "context": "Link text on the account page"
+  },
+  "old.welcome": "Welcome back, {name}!"
+}

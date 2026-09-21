@@ -1,0 +1,8 @@
+{
+  "app.title": "Messages",
+  "greeting": "Bonjour {name, number}, bienvenue sur <b>{product}</b> !",
+  "items": "{count, plural, one {Vous avez un élément}}",
+  "delete.confirm": "Supprimer {filename} ? Ceci n'est pas récupérable.",
+  "profile.edit": "Modifier <a href=\"{url}\">votre profil</a>",
+  "old.welcome": "Bon retour, {name} !"
+}
