@@ -1,0 +1,82 @@
+
+<div class="card">
+  <h2>1 · 导入目录</h2>
+  <div class="row">
+    <input id="impLang" placeholder="语言代码，如 en（首个即基准）" style="width:230px">
+    <input id="impFile" type="file" accept=".json,application/json">
+    <input id="impOp" placeholder="操作标识 opId（留空自动生成）" style="width:240px">
+    <button class="primary" onclick="doImport()">上传</button>
+  </div>
+  <p class="mut">同样内容改变键顺序或换行风格不会产生新版本；原始文件始终可逐字节下载。</p>
+</div>
+
+<div class="card">
+  <h2>2 · 当前状态 / 快照</h2>
+  <div id="stateBox" class="kvs"></div>
+  <p class="mut" id="degradeBox"></p>
+</div>
+
+<div class="card full">
+  <h2>3 · 目录版本与原始文件</h2>
+  <table id="langTable"><thead><tr>
+    <th>语言</th><th>角色</th><th>内容版本</th><th>上传</th><th>导入时间</th><th>操作</th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<div class="card full">
+  <h2>4 · 改名映射确认</h2>
+  <p class="mut" id="renameHint">基准语言改名必须先确认；不能成环，也不能把两个旧 key 并入一个新 key。</p>
+  <div id="renameBox"></div>
+</div>
+
+<div class="card full">
+  <h2>5 · 问题列表</h2>
+  <div class="row">
+    <select id="issueLang" onchange="loadIssues()"></select>
+    <span id="issueSnap" class="snap"></span>
+    <button onclick="openReplay()">重放所选 tuple</button>
+  </div>
+  <table id="issueTable"><thead><tr>
+    <th></th><th>代码</th><th>Key</th><th>占位符</th><th>说明</th><th>期望/实际</th><th>豁免</th><th></th>
+  </tr></thead><tbody></tbody></table>
+</div>
+
+<div class="card full">
+  <h2>6 · 并排结构视图</h2>
+  <div class="row">
+    <input id="cmpKey" placeholder="输入 key（或用问题行“查看”）" style="width:280px">
+    <button onclick="compare()">查看结构</button>
+    <span id="cmpSnap" class="snap"></span>
+  </div>
+  <div id="cmpBox" class="grid2"></div>
+</div>
+
+<div class="card">
+  <h2>7 · 批量修正（逐语言隔离）</h2>
+  <p class="mut">某语言版本冲突不会回滚其它语言；同一操作标识重试只处理未成功项。</p>
+  <div id="batchBox"></div>
+  <div class="row" style="margin-top:8px">
+    <input id="batchOp" placeholder="批量 opId（留空自动生成）" style="width:240px">
+    <button class="primary" onclick="submitBatch()">提交批量修正</button>
+  </div>
+  <pre id="batchResult"></pre>
+</div>
+
+<div class="card">
+  <h2>8 · 发布证明</h2>
+  <div class="row">
+    <button class="primary" onclick="genProof()">生成证明</button>
+    <a id="proofDl" href="#"><button>下载最新证明</button></a>
+  </div>
+  <pre id="proofBox"></pre>
+</div>
+
+<div class="card full">
+  <h2>9 · 操作回执 / 重放目录</h2>
+  <div class="row">
+    <input id="opQuery" placeholder="按 opId 查询回执" style="width:260px">
+    <button onclick="queryOp()">查询</button>
+  </div>
+  <pre id="opBox"></pre>
+  <details><summary>已保存的校验 tuple（旧结果重放）</summary><div id="tupleBox"></div></details>
+</div>
