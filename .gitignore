@@ -34,3 +34,8 @@ coverage/
 .vite/
 .turbo/
 *.tsbuildinfo
+
+# Go build output and local workbench data
+/server
+/cmd/server/server
+.msgcatalog-data/
