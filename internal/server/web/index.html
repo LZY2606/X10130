@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>消息目录校验</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#dfe3e8;--ink:#1f2430;--muted:#6b7280;
+--blue:#2563eb;--red:#dc2626;--amber:#b45309;--green:#15803d;--chip:#eef2ff;}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#111827;color:#fff;padding:14px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}
+.snap{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#1f2937;padding:4px 8px;border-radius:6px}
+main{max-width:1280px;margin:18px auto;padding:0 16px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h2{font-size:15px;margin:0 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+input,select,textarea,button{font:inherit}
+input[type=text],input[type=datetime-local],select,textarea{border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:#fff}
+textarea{width:100%;min-height:74px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+button{background:var(--blue);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+button.danger{background:var(--red)}
+button:disabled{opacity:.5;cursor:default}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:12px}
+code,.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600}
+.b-stale{background:#fef3c7;color:var(--amber)}
+.b-ok{background:#dcfce7;color:var(--green)}
+.b-err{background:#fee2e2;color:var(--red)}
+.b-info{background:var(--chip);color:#3730a3}
+.code{font-weight:600}
+.muted{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+pre{background:#0b1020;color:#d7e0ff;padding:12px;border-radius:8px;overflow:auto;max-height:360px;font-size:12px}
+.toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:#111827;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;white-space:pre-wrap;display:none;z-index:50}
+.pill{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
+.conflict{background:#fffbeb;border-color:#fcd34d}
+details summary{cursor:pointer;font-size:13px}
+.small{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>消息目录校验</h1>
+  <span class="snap" id="snap">未加载</span>
+  <span class="snap" id="parser">parser: -</span>
+  <span style="flex:1"></span>
+  <button class="ghost" onclick="loadState()">刷新</button>
+</header>
+<main>
+
+<section class="card">
+  <h2>1. 导入目录（原始文件逐字节保存）</h2>
+  <div class="row">
+    <div><label>角色</label><select id="impRole"><option value="baseline">基准语言</option><option value="target">目标语言</option></select></div>
+    <div><label>语言代码</label><input type="text" id="impLang" placeholder="en / ja / fr" style="width:130px"></div>
+    <div><label>消息文件（JSON）</label><input type="file" id="impFile" accept=".json,application/json"></div>
+    <div><label>操作标识（可选，幂等）</label><input type="text" id="impOp" placeholder="op-import-1" style="width:180px"></div>
+    <button onclick="doImport()">导入</button>
+  </div>
+  <div class="small muted" style="margin-top:6px">仅改变键顺序或换行风格（LF/CRLF）不会产生新版本；每次上传均可原样下载。</div>
+</section>
+
+<section class="card">
+  <h2>2. 当前状态</h2>
+  <div id="stateBox" class="small muted">尚无数据。</div>
+</section>
+
+<section class="card">
+  <h2>3. 改名确认（基准 key 重命名需要人工映射）</h2>
+  <div id="renameBox" class="small muted">导入第二个基准版本后在此确认映射。</div>
+  <table style="margin-top:10px"><thead><tr><th>已确认映射</th><th>操作</th></tr></thead>
+  <tbody id="edgesBody"></tbody></table>
+</section>
+
+<section class="card">
+  <h2>4. 问题列表（含未豁免计数、过期豁免）</h2>
+  <div class="row" style="margin-bottom:10px">
+    <div><label>目标语言</label><select id="issueLang" onchange="loadIssues()"></select></div>
+    <label class="small"><input type="checkbox" id="onlyActive" onchange="renderIssues()"> 只看未豁免</label>
+    <span class="pill" id="issueBasis">结果: -</span>
+  </div>
+  <div id="issueBox" class="small muted">选择语言后加载。</div>
+</section>
+
+<section class="card">
+  <h2>5. 并排结构视图（同一快照）</h2>
+  <div class="row" style="margin-bottom:8px">
+    <div><label>key</label><input type="text" id="cmpKey" style="width:240px"></div>
+    <div><label>语言</label><select id="cmpLang"></select></div>
+    <button onclick="loadCompare()">并排查看</button>
+  </div>
+  <div class="grid2">
+    <div><div class="small muted">基准</div><pre id="cmpBase">（待查询）</pre></div>
+    <div><div class="small muted" id="cmpTargetTitle">目标</div><pre id="cmpTarget">（待查询）</pre></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>6. 豁免（带期限与理由）</h2>
+  <div class="row">
+    <div><label>问题指纹</label><input type="text" id="exFP" readonly style="width:210px"></div>
+    <div><label>语言</label><input type="text" id="exLang" readonly style="width:90px"></div>
+    <div><label>负责人</label><input type="text" id="exOwner" style="width:120px"></div>
+    <div><label>到期时间</label><input type="datetime-local" id="exExp"></div>
+    <div style="flex:1"><label>理由</label><input type="text" id="exReason" style="width:100%"></div>
+    <button onclick="grantEx()">设置豁免</button>
+  </div>
+  <table style="margin-top:10px"><thead><tr><th>豁免</th><th>状态</th><th>理由</th><th>到期</th><th>操作</th></tr></thead>
+  <tbody id="exBody"></tbody></table>
+</section>
+
+<section class="card">
+  <h2>7. 批量修正（逐语言独立成功/冲突，可同标识重试）</h2>
+  <div class="row">
+    <div><label>操作标识</label><input type="text" id="bOp" value="op-batch-1" style="width:170px"></div>
+    <div><label>依据基准版本</label><input type="text" id="bBase" readonly style="width:170px"></div>
+  </div>
+  <table style="margin-top:8px"><thead><tr><th>语言</th><th>依据目标版本</th><th>修正内容 JSON</th><th></th></tr></thead>
+  <tbody id="bBody"></tbody></table>
+  <div class="row" style="margin-top:8px"><button onclick="addBatchRow()">添加语言</button><button onclick="submitBatch()">提交批量修正</button></div>
+  <div id="bResult" class="small" style="margin-top:8px"></div>
+</section>
+
+<section class="card">
+  <h2>8. 发布证明（确定性、机器可读）</h2>
+  <div class="row">
+    <button onclick="genCert()">生成发布证明</button>
+    <button class="ghost" onclick="loadCerts()">刷新证明列表</button>
+    <span class="pill" id="certStatus">最新证明: -</span>
+  </div>
+  <pre id="certBox" style="margin-top:10px">（尚未生成）</pre>
+</section>
+
+<section class="card">
+  <h2>9. 旧校验结果重放</h2>
+  <div class="row"><select id="replaySel" style="min-width:340px"></select><button onclick="replayResult()">重放该结果</button></div>
+  <pre id="replayBox" style="margin-top:10px">（尚未选择）</pre>
+</section>
+
+<section class="card">
+  <h2>原始文件下载</h2>
+  <div id="rawBox" class="small muted">尚无上传。</div>
+</section>
+
+<section class="card">
+  <h2>演示工具</h2>
+  <div class="row">
+    <button class="ghost" onclick="demoSeed()">① 加载演示数据</button>
+    <button class="ghost" onclick="demoExpiredConflict()">② 制造过期豁免 + 版本冲突</button>
+    <button class="ghost" onclick="demoRetrySameOp()">③ 同标识重试（版本数不增加）</button>
+    <button class="ghost" onclick="demoSameOpDifferentContent()">④ 同标识异内容（应被拒绝）</button>
+  </div>
+  <p class="small muted" id="demoHint">建议顺序：① → 生成证明 → ② → 批量重试 → ③④。</p>
+</section>
+
+</main>
+<div class="toast" id="toast"></div>
+<script>
+let STATE=null, ISSUES=null, LAST_SNAP=null, ISSUES_SNAP=null;
+const $=id=>document.getElementById(id);
+function toast(msg,bad){const t=$('toast');t.textContent=msg;t.style.display='block';
+ t.style.background=bad?'#7f1d1d':'#111827';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',6000);}
+function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function shortId(s){return s?String(s).slice(0,16):'-';}
+
+async function api(path,opts){
+  const res=await fetch(path,opts);
+  const ct=res.headers.get('content-type')||'';
+  const body=ct.includes('json')?await res.json():await res.text();
+  if(!res.ok){const e=new Error(body.error||('HTTP '+res.status));e.kind=body.kind;e.body=body;throw e;}
+  return {body,replay:res.headers.get('x-idempotent-replay')==='true'};
+}
+
+async function loadState(){
+  const {body}=await api('/api/state');
+  STATE=body; LAST_SNAP=body.snapshot.id;
+  $('snap').textContent='快照 '+body.snapshot.id;
+  $('parser').textContent='parser: '+body.parser_version;
+  renderState(); renderRename(); renderExemptions(); renderRaws(); fillLangSelects(); loadCerts(true);
+  if(STATE.base_version){$('bBase').value=STATE.base_version.id;}
+  if(body.startup_warnings&&body.startup_warnings.length){toast(body.startup_warnings.join('\n'),true);}
+}
+
+function renderState(){
+  if(!STATE.base_version){$('stateBox').innerHTML='<span class="muted">尚未导入基准目录。</span>';return;}
+  const b=STATE.base_version;
+  let h=`<div>基准语言 <b>${esc(STATE.baseline_language)}</b> · 版本 <code>${b.id}</code> · 指纹 <code>${shortId(b.fingerprint)}</code> · ${b.keys} 条</div>`;
+  h+='<table style="margin-top:8px"><thead><tr><th>语言</th><th>目标版本</th><th>结果/依据</th><th>问题</th><th>状态</th></tr></thead><tbody>';
+  for(const [lang,lv] of Object.entries(STATE.languages)){
+    let basis=lv.current_result?('结果 '+shortId(lv.current_result.id)+'<br><span class="muted">映射 '+shortId(lv.current_result.mapping_hash)+' · parser '+lv.current_result.parser_version+'</span>'):'无结果';
+    let badge=lv.stale?`<span class="badge b-stale">已失效:${esc(lv.stale_reason)}</span>`:`<span class="badge b-ok">最新</span>`;
+    h+=`<tr><td>${esc(lang)}</td><td><code>${shortId(lv.version.id)}</code></td><td>${basis}</td>
+    <td>未豁免 <b>${lv.issue_active}</b> / 共 ${lv.issue_total}${lv.exempted?` · 豁免 ${lv.exempted}（过期 ${lv.expired}）`:''}</td>
+    <td>${badge}</td></tr>`;
+  }
+  h+='</tbody></table>';
+  $('stateBox').innerHTML=h;
+}
+
+function fillLangSelects(){
+  const langs=Object.keys(STATE.languages||{}).sort();
+  for(const id of ['issueLang','cmpLang']){
+    const sel=$(id);const cur=sel.value;sel.innerHTML='';
+    langs.forEach(l=>{const o=document.createElement('option');o.value=l;o.textContent=l;sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  }
+  const sel=$('replaySel');
+  sel.innerHTML='';
+  // populated from result list endpoint lazily; derive from issues calls below
+}
+</script>
+<script>
+async function doImport(){
+  const f=$('impFile').files[0];
+  if(!f){toast('请选择文件',true);return;}
+  const lang=$('impLang').value.trim();
+  if(!lang){toast('请填写语言代码',true);return;}
+  const fd=new FormData();
+  fd.append('role',$('impRole').value);fd.append('language',lang);
+  fd.append('file',f);
+  if($('impOp').value.trim())fd.append('operation_id',$('impOp').value.trim());
+  fd.append('snapshot_id',LAST_SNAP||'');
+  try{
+    const {body,replay}=await api('/api/import',{method:'POST',body:fd});
+    await loadState();
+    toast((replay?'[幂等重放] ':'')+'导入完成: 版本 '+body.version_id.slice(0,14)+(body.version_created?'（新版本）':'（版本不变）'));
+  }catch(e){toast('导入失败: '+e.message,true);}
+}
+
+async function loadIssues(){
+  const lang=$('issueLang').value;if(!lang)return;
+  try{
+    const {body}=await api(`/api/issues?language=${encodeURIComponent(lang)}`);
+    ISSUES=body;ISSUES_SNAP=body.snapshot.id;renderIssues();
+    $('issueBasis').textContent=`快照 ${body.snapshot.id.slice(0,18)} · 结果 ${body.result_id.slice(0,14)} · parser ${body.parser_version}`+
+      (body.stale?` · 已失效(${body.stale_reason})`:' · 最新');
+  }catch(e){$('issueBox').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>';}
+}
+
+function renderIssues(){
+  if(!ISSUES)return;
+  const only=$('onlyActive').checked;
+  let h=`<table><thead><tr><th>代码</th><th>key</th><th>详情</th><th>期望 / 实际</th><th>豁免</th><th></th></tr></thead><tbody>`;
+  let rows=ISSUES.issues.filter(r=>!only||!r.exempted);
+  if(!rows.length){h+='<tr><td colspan="6" class="muted">没有匹配的问题。</td></tr>';}
+  for(const r of rows){
+    let ex=r.exempted?`<span class="badge b-ok">已豁免至 ${esc(r.exemption.expires_at)}</span>`:
+      (r.expired?`<span class="badge b-stale">豁免已过期</span>`:`<span class="badge b-err">未豁免</span>`);
+    let ea=r.expected&&r.expected.length?`<div class="muted">期望: ${r.expected.map(esc).join(', ')}</div>`:'';
+    let aa=r.actual&&r.actual.length?`<div class="muted">实际: ${r.actual.map(esc).join(', ')}</div>`:'';
+    h+=`<tr><td class="code">${esc(r.issue.code)}</td><td><code>${esc(r.issue.key)}</code></td>
+    <td>${esc(r.issue.detail)}</td><td>${ea}${aa}</td><td>${ex}</td>
+    <td><button class="ghost" onclick='pickExemption(${JSON.stringify(r).replace(/'/g,"&#39;")})'>豁免</button></td></tr>`;
+  }
+  h+='</tbody></table>';
+  h+=`<div style="margin-top:8px">未豁免计数: <b>${ISSUES.active_count}</b> / 总问题 ${ISSUES.issues.length}</div>`;
+  $('issueBox').innerHTML=h;
+}
+
+function pickExemption(r){
+  $('exFP').value=r.issue.fingerprint;$('exLang').value=r.issue.language;
+  $('exReason').value='针对 '+r.issue.code+' ('+(r.issue.key||'')+') 的发布豁免';
+  const d=new Date(Date.now()+3*24*3600*1000);
+  $('exExp').value=d.toISOString().slice(0,16);
+  window.scrollTo(0,document.body.scrollHeight);
+}
+
+async function loadCompare(){
+  const lang=$('cmpLang').value;const key=$('cmpKey').value.trim();
+  if(!lang||!key){toast('请选择语言并填写 key',true);return;}
+  try{
+    const {body}=await api(`/api/issues?language=${encodeURIComponent(lang)}`);
+    const rid=body.result_id;
+    const r=await api(`/api/results/${rid}`);
+    const d=r.body;
+    const be=(d.result.base_entries||[]).find(e=>e.key===key);
+    const match=(d.result.matches||[]).find(m=>m.base_key===key);
+    const tkey=match?match.target_key:key;
+    const te=(d.result.target_entries||[]).find(e=>e.key===tkey);
+    $('cmpBase').textContent=be?JSON.stringify(be,null,2):'(基准无此 key)';
+    $('cmpTargetTitle').textContent=`目标 ${lang} · key=${tkey}`+(match&&match.renamed?' (改名映射)':'');
+    $('cmpTarget').textContent=te?JSON.stringify(te,null,2):'(目标无对应消息)';
+    toast(`并排视图依据: 结果 ${rid.slice(0,10)} / 快照 ${d.snapshot.id.slice(0,10)}`+
+      (d.stale?'（历史结果，写操作需重新校验）':''),d.stale);
+    populateReplay(rid,d.stale);
+  }catch(e){toast(e.message,true);}
+}
+function populateReplay(rid,stale){const sel=$('replaySel');
+  if(!Array.from(sel.options).some(o=>o.value===rid)){const o=document.createElement('option');
+  o.value=rid;o.textContent=rid.slice(0,14)+(stale?' (历史)':' (当前)');sel.appendChild(o);}sel.value=rid;}
+</script>
+<script>
+function renderRename(){
+  const box=$('renameBox');
+  const pend=(STATE.pending_renames||[])[0];
+  if(pend){
+    let h=`<div class="small">基准 <code>${shortId(pend.from_version_id)}</code> → <code>${shortId(pend.to_version_id)}</code>：
+      删除 ${pend.removed.length} 个 key，新增 ${pend.added.length} 个 key。改名不会自动建立，必须逐条确认。</div>
+      <table style="margin-top:8px"><thead><tr><th>旧 key（删除）</th><th>新 key（新增）</th><th>操作标识</th><th></th></tr></thead><tbody>`;
+    for(let i=0;i<Math.max(pend.removed.length,pend.added.length);i++){
+      h+=`<tr><td><select data-r=from data-i="${i}">${pend.removed.map(k=>`<option ${i===pend.removed.indexOf(k)?'selected':''}>${esc(k)}</option>`).join('')}</select></td>
+      <td><select data-r=to data-i="${i}">${pend.added.map(k=>`<option ${i===pend.added.indexOf(k)?'selected':''}>${esc(k)}</option>`).join('')}</select></td>
+      <td><input type="text" class="rop" data-i="${i}" value="op-rename-${i+1}" style="width:150px"></td>
+      <td><button onclick="confirmRename(${i})">确认改名</button></td></tr>`;
+    }
+    h+='</tbody></table>';box.innerHTML=h;
+  }else{box.innerHTML='<span class="muted">没有待确认的改名（当前基准版本未发生 key 增删，或已全部确认）。</span>';}
+  const eb=$('edgesBody');eb.innerHTML='';
+  (STATE.edges||[]).forEach(e=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><code>${esc(e.from_key)}</code> → <code>${esc(e.to_key)}</code><br><span class="muted small">${shortId(e.from_version_id)} → ${shortId(e.to_version_id)}</span></td><td><span class="badge b-ok">已确认</span></td>`;
+    eb.appendChild(tr);});
+}
+
+async function confirmRename(i){
+  const pend=STATE.pending_renames[0];
+  const fromSel=document.querySelector(`select[data-r=from][data-i="${i}"]`);
+  const toSel=document.querySelector(`select[data-r=to][data-i="${i}"]`);
+  const op=document.querySelector(`input.rop[data-i="${i}"]`).value.trim();
+  try{
+    const {body,replay}=await api('/api/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({operation_id:op,snapshot_id:LAST_SNAP,from_version_id:pend.from_version_id,
+      to_version_id:pend.to_version_id,from_key:fromSel.value,to_key:toSel.value})});
+    await loadState();toast((replay?'[幂等重放] ':'')+'改名映射已确认');
+  }catch(e){toast('改名被拒绝: '+e.message,true);}
+}
+
+function renderExemptions(){
+  const eb=$('exBody');eb.innerHTML='';
+  (STATE.exemptions||[]).forEach(v=>{
+    const e=v.exemption;
+    const badge=v.active?'<span class="badge b-ok">生效中</span>':
+      (e.revoked_at?'<span class="badge b-info">已撤销</span>':'<span class="badge b-stale">已过期</span>');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><code>${shortId(e.id)}</code><br><span class="muted small">${esc(e.language)} · ${esc(e.code)} · ${esc(e.key||'')}</span></td>
+      <td>${badge}</td><td>${esc(e.reason)}</td><td class="small">${esc(e.expires_at)}</td>
+      <td>${v.active?`<button class="danger" onclick="revokeEx('${e.id}')">撤销</button>`:''}</td>`;
+    eb.appendChild(tr);
+  });
+}
+
+async function grantEx(){
+  if(!$('exFP').value){toast('请先在问题列表选择豁免',true);return;}
+  const exp=new Date($('exExp').value).toISOString();
+  const op='op-ex-'+$('exFP').value.slice(0,8)+'-'+Date.now();
+  try{
+    const {body}=await api('/api/exemption',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({operation_id:op,snapshot_id:ISSUES_SNAP||LAST_SNAP,action:'grant',
+      issue_fingerprint:$('exFP').value,language:$('exLang').value,
+      reason:$('exReason').value,owner:$('exOwner').value||'owner',expires_at:exp})});
+    await loadState();await loadIssues();toast('豁免已设置，至 '+body.exemption.expires_at);
+  }catch(e){toast('豁免失败: '+e.message,true);}
+}
+async function revokeEx(id){
+  const op='op-revoke-'+id.slice(0,10);
+  try{await api('/api/exemption',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({operation_id:op,snapshot_id:LAST_SNAP,action:'revoke',exemption_id:id})});
+    await loadState();toast('豁免已撤销');
+  }catch(e){toast(e.message,true);}
+}
+</script>
+<script>
+function addBatchRow(){
+  const langs=Object.keys(STATE.languages||{});
+  const tb=$('bBody');const i=tb.rows.length;
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td><input class="bl" style="width:80px" value="${langs[i]||''}"></td>
+    <td class="mono small bver">${shortId(langs[i]&&STATE.languages[langs[i]].version.id)||''}</td>
+    <td><textarea class="bc" placeholder='{"greeting":"Bonjour {name} !"}'></textarea></td>
+    <td><button class="ghost" onclick="this.closest('tr').remove()">删除</button></td>`;
+  tb.appendChild(tr);
+  tr.querySelector('.bl').addEventListener('change',e=>{
+    const lv=STATE.languages[e.target.value];
+    tr.querySelector('.bver').textContent=lv?shortId(lv.version.id):'';
+  });
+}
+
+async function submitBatch(){
+  const items=[];
+  for(const tr of $('bBody').rows){
+    const lang=tr.querySelector('.bl').value.trim();
+    const content=tr.querySelector('.bc').value.trim();
+    if(!lang||!content)continue;
+    const lv=STATE.languages[lang];
+    items.push({language:lang,filename:lang+'.json',content_json:content,
+      expected_target_version_id:lv?lv.version.id:''});
+  }
+  if(!items.length){toast('请填写至少一行',true);return;}
+  $('bResult').innerHTML='提交中…';
+  try{
+    const {body,replay}=await api('/api/batch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({operation_id:$('bOp').value.trim(),snapshot_id:LAST_SNAP,
+      expected_base_version_id:$('bBase').value,items})});
+    let h=(replay?'<span class="badge b-info">同标识重试：返回既有回执，未重复应用</span> ':'')+
+      (body.base_ok?'':'<span class="badge b-err">基准版本冲突</span> ')+
+      (body.all_succeeded?'<span class="badge b-ok">全部成功</span>':'<span class="badge b-stale">部分成功</span>');
+    h+='<table style="margin-top:6px"><thead><tr><th>语言</th><th>结果</th><th>版本</th><th>原因</th></tr></thead><tbody>';
+    for(const s of body.subs){
+      h+=`<tr class="${s.status==='conflict'?'conflict':''}"><td>${esc(s.language)}</td>
+      <td>${s.status==='success'?'<span class="badge b-ok">成功</span>':'<span class="badge b-err">冲突</span>'}</td>
+      <td><code>${shortId(s.version_id)}</code></td><td class="small">${esc(s.reason||'')}</td></tr>`;
+    }
+    h+='</tbody></table>';
+    $('bResult').innerHTML=h;
+    await loadState();
+  }catch(e){$('bResult').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>';toast(e.message,true);}
+}
+
+async function genCert(){
+  try{
+    const {body}=await api('/api/certs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({snapshot_id:LAST_SNAP})});
+    $('certBox').textContent=body.bytes;
+    $('certStatus').textContent='最新证明: '+body.meta.id.slice(0,18)+(body.current?'（对应当前状态）':'（历史状态）');
+    await loadCerts(true);
+  }catch(e){toast('证明生成失败: '+e.message,true);$('certStatus').textContent='生成被拒绝';}
+}
+async function loadCerts(silent){
+  try{
+    const {body}=await api('/api/certs');
+    if(!silent||!$('certBox').textContent.startsWith('{')&&!$('certBox').textContent.startsWith(' ') && body.certs.length){
+      const latest=body.certs.find(c=>c.meta.id===STATE.latest_cert?.id)||body.certs[0];
+      if(latest){$('certStatus').textContent='最新证明: '+latest.meta.id.slice(0,18)+(latest.current?'（当前）':'（历史）');}
+    }
+  }catch(e){if(!silent)toast(e.message,true);}
+}
+
+async function replayResult(){
+  const id=$('replaySel').value;if(!id)return;
+  const {body}=await api('/api/results/'+id);
+  $('replayBox').textContent=JSON.stringify({snapshot:body.snapshot,basis:{
+    parser_version:body.meta.parser_version,base_version_id:body.meta.base_version_id,
+    target_version_id:body.meta.target_version_id,mapping_hash:body.meta.mapping_hash},
+    stale:body.stale,stale_reason:body.reason,
+    issues:body.result.issues,matches:body.result.matches,
+    base_entries:body.result.base_entries,target_entries:body.result.target_entries},null,2);
+  toast('已重放固定结果 '+id.slice(0,10)+(body.stale?'（已失效，仅供查看）':'（仍为当前）'),body.stale);
+}
+
+function renderRaws(){
+  const box=$('rawBox');
+  let rows='';
+  for(const [lid,lv] of Object.entries(STATE.languages||{})){
+    for(const uid of (lv.version.upload_ids||[])){
+      rows+=`<span class="pill" style="margin:2px"><a href="/api/raw/${uid}">下载 ${esc(lv.version.fingerprint.slice(0,8))}… 上传</a></span> `;
+    }
+  }
+  box.innerHTML=rows||'<span class="muted">尚无上传。</span>';
+}
+</script>
+<script>
+async function postJSON(path,obj){
+  const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+  const b=await res.json();
+  if(!res.ok){const e=new Error(b.error||'HTTP '+res.status);e.kind=b.kind;throw e;}
+  return b;
+}
+async function importJSON(role,lang,obj,op){
+  return postJSON('/api/import',{role,language:lang,filename:lang+'.json',
+    content:new TextEncoder().encode(JSON.stringify(obj,null,2)),operation_id:op,snapshot_id:LAST_SNAP});
+}
+async function demoSeed(){
+  try{
+    await importJSON('baseline','en',{
+      greeting:"Hello {name}!",
+      items:"{count, plural, one {# item} other {# items}}",
+      welcome:"Welcome back, <b>{name}</b>.",
+      choose:"{gender, select, male {Sir} female {Madam} other {Friend}}",
+      quote:"It''s {name}, use '{curly}' now"
+    },'op-seed-base-v1');
+    await loadState();
+    await importJSON('target','ja',{
+      greeting:"こんにちは {name}！",
+      items:"{count, plural, other {# 件}}",
+      welcome:"おかえりなさい、<b>{name}</b>。",
+      choose:"{gender, select, female {様} other {皆様}}",
+      quote:"{name} です"
+    },'op-seed-ja-v1');
+    await loadState();
+    if(!$('bBody').rows.length)addBatchRow();
+    toast('演示数据已导入：ja 缺少 plural one、select male、引号处理不同。');
+  }catch(e){toast('演示数据失败: '+e.message,true);}
+}
+
+async function demoExpiredConflict(){
+  try{
+    // 先给 ja 的一个问题设置“立即过期”的豁免
+    const iss=await api(`/api/issues?language=ja`);
+    const row=iss.body.issues[0];
+    const past=new Date(Date.now()-60000).toISOString();
+    try{
+      await postJSON('/api/exemption',{operation_id:'op-demo-exp',snapshot_id:LAST_SNAP,action:'grant',
+        issue_fingerprint:row.issue.fingerprint,language:'ja',code:row.issue.code,key:row.issue.key,
+        reason:'演示：制造一个已到期豁免',owner:'demo',expires_at:past});
+    }catch(e){/* 过期时间不能未来，改用 grant 后再由演示观察 */}
+    // 合法做法：设置1秒后到期的豁免
+    const soon=new Date(Date.now()+1500).toISOString();
+    try{
+      await postJSON('/api/exemption',{operation_id:'op-demo-soon',snapshot_id:LAST_SNAP,action:'grant',
+        issue_fingerprint:row.issue.fingerprint,language:'ja',code:row.issue.code,key:row.issue.key,
+        reason:'演示：1.5 秒后到期',owner:'demo',expires_at:soon});
+    }catch(e){}
+    // 导入新基准（内容变化）-> 批量修正依据的旧基准失效
+    await importJSON('baseline','en',{
+      greeting:"Hi {name}!",
+      items:"{count, plural, one {# item} other {# items}}",
+      welcome:"Welcome back, <b>{name}</b>.",
+      choose:"{gender, select, male {Sir} female {Madam} other {Friend}}",
+      quote:"It''s {name}, use '{curly}' now",
+      newkey:"new message"
+    },'op-demo-base-v2');
+    await loadState();
+    // 预填一个批量修正行，依据版本是 *旧* 目标版本，且基准版本不匹配
+    const oldJa=(await fetch('/api/state').then(r=>r.json())).languages.ja.version.id;
+    $('bBody').innerHTML='';addBatchRow();
+    const tr=$('bBody').rows[0];
+    tr.querySelector('.bl').value='ja';tr.querySelector('.bver').textContent=oldJa.slice(0,16);
+    tr.querySelector('.bc').value=JSON.stringify({greeting:"やあ {name}！",items:"{count, plural, other {# 件}}",
+      welcome:"おかえりなさい、<b>{name}</b>。",
+      choose:"{gender, select, female {様} other {皆様}}",quote:"{name} です",newkey:"新規メッセージ"},null,2);
+    $('bOp').value='op-demo-batch-retry';
+    toast('已制造：豁免即将到期 + 新基准版本；批量修正行携带旧依据。等待约 2 秒后提交可看到“已过期”。');
+  }catch(e){toast(e.message,true);}
+}
+
+async function demoRetrySameOp(){
+  // 直接重放导入操作标识，验证版本数不增加
+  try{
+    const out=await postJSON('/api/import',{role:'target',language:'ja',filename:'ja.json',
+      content:new TextEncoder().encode(JSON.stringify({
+        greeting:"こんにちは {name}！",items:"{count, plural, other {# 件}}",
+        welcome:"おかえりなさい、<b>{name}</b>。",
+        choose:"{gender, select, female {様} other {皆様}}",quote:"{name} です"},null,2)),
+      operation_id:'op-seed-ja-v1'});
+    await loadState();
+    toast('同标识重复提交: version_created='+out.version_created+'，返回既有结果，未新增版本。');
+  }catch(e){toast(e.message,true);}
+}
+
+async function demoSameOpDifferentContent(){
+  try{
+    await postJSON('/api/import',{role:'target',language:'ja',filename:'ja.json',
+      content:new TextEncoder().encode(JSON.stringify({greeting:"DIFFERENT {name}"}),null,2)),
+      operation_id:'op-seed-ja-v1'});
+    toast('异常：应当被拒绝',true);
+  }catch(e){
+    toast('同标识异内容被明确拒绝 ('+e.kind+'): '+e.message,true);
+  }
+}
+
+loadState().then(()=>{ /* initial render */ });
+</script>
+</body>
+</html>
